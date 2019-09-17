@@ -1,0 +1,318 @@
+PHP_Laravel5.5_事件广播系统-Redis广播器(结合Redis队列)+LaravelEchoServer(作为Socket.IO服务器/WebSocket服务器)+LaravelEcho客户端；
+--
+^2_3^2workroom3工作室(绝境求生)
+--
+--
+在我看来，实时通信才是 APP 应用的将来。Socket 服务通常不是那么容易实现，但是 Laravel Echo 服务改变了这个情况。在本文中，我将会简要的介绍如何建立一个可以运行的 Socket 服务并且在这个服务上进行事件的广播。
+laravel-echo-server项目( https://github.com/tlaverdure/laravel-echo-server )，Laravel的支持文档( https://learnku.com/docs/laravel/5.6/broadcasting#driver-prerequisites )，它是完全免费的，你只要运行你自己的 Socket 服务。你也可以使用 Laravel 默认集成的 Pusher ，唯一的缺点是它是有限制的，如果超出限制则需要付费。我更喜欢自己来架构这些东西。
+这里采用社区驱动维护的项目 tlaverdure/laravel-echo-server( https://github.com/tlaverdure/laravel-echo-server )，这是一个使用socket.io来支持laravel广播的nodejs服务器。当运行后会将socket.io客户端js代码暴露在一个标准的的url中。我们需要在我们的项目中(视图文件)引入这个地址。
+--
+--
+1、环境搭建
+(1)、项目搭建
+///1/ 创建项目
+composer create-project --prefer-dist laravel/laravel project-laravel55-m-broadcaster "5.5.*"
+//
+//// 添加主机 (apache httpd-vhosts.conf)
+##^2_3^## project-laravel55-m-broadcaster
+## 2019-09-15
+## PHP_Laravel5.5_模块_广播系统功能项目搭建；
+## https://learnku.com/docs/laravel/5.5/broadcasting/1315
+## 方案：Redis + Socket.io( LaravelEchoServer https://github.com/tlaverdure/laravel-echo-server )；
+<VirtualHost *:80>
+    ServerAdmin 271267625@qq.com
+    DocumentRoot "/Users/cenyebao/web/project-laravel55-m-broadcaster/public"
+    ServerName project-laravel55-m-broadcaster.test
+    ErrorLog "logs/project-laravel55-m-broadcaster-error_log"
+    CustomLog "logs/project-laravel55-m-broadcaster-access_log" common
+</VirtualHost>
+//
+//// 添加本地域名解析
+// /etc/hosts
+# 广播系统功能项目
+127.0.0.1   project-laravel55-m-broadcaster.test
+//
+(2)、配置项目
+(1)、事件队列配置
+//// config/queue.php
+'default' => 'redis', //默认使用redis队列；
+//
+(2)、广播系统配置
+//// config/broadcasting.php
+'default' => 'redis', //默认使用Redis广播器(需要搭载下面Socket.IO服务器 LaravelEchoServer)；
+//
+(3)、注册广播服务提供器
+服务提供器位置：App\Providers\BroadcastServiceProvider。只需在 config/app.php 配置文件的 providers 数组中取消对该提供者的注释即可。
+--
+2、驱动器配置
+这里采用 redis + soocket.io 的组合。
+//
+///1/ 安装Predis
+$ cd /Users/cenyebao/web/project-laravel55-m-broadcaster
+$ composer require  predis/predis "~1.0"
+//$ composer require predis/predis
+//
+///2/ 全局安装
+$ npm install -g laravel-echo-server
+这里采用社区驱动维护的项目 tlaverdure/laravel-echo-server( https://github.com/tlaverdure/laravel-echo-server )，这是一个使用socket.io来支持laravel广播的nodejs服务器。当运行后会将socket.io客户端js代码暴露在一个标准的的url中。我们需要在我们的项目中(视图文件)引入这个地址。
+//
+///3/ 初始化 Socket 服务端
+$ laravel-echo-server init
+? Do you want to run this server in development mode? Yes
+? Which port would you like to serve from? 6001
+? Which database would you like to use to store presence channel members? redis
+? Enter the host of your Laravel authentication server. http://project-laravel55-m-broadcaster.test/
+? Will you be serving on http or https? http
+? Do you want to generate a client ID/Key for HTTP API? Yes
+? Do you want to setup cross domain access to the API? No
+? What do you want this config to be saved as? laravel-echo-server.json
+appId: 294539a598bca6d3
+key: b2748a2d97dbed2ccade9796a1c76a05
+Configuration file saved. Run laravel-echo-server start to run server.
+//
+执行这条命令后，会询问你一些关于 Socket 服务的配置信息，你可以根据自己的情况填写。切记在生产环境中，无论你什么时候使用它，都应该关掉你的开发者模式。
+//
+///3/ 启动服务
+$ laravel-echo-server start
+//
+L A R A V E L  E C H O  S E R V E R
+version 1.5.8
+⚠ Starting server in DEV mode...
+✔  Running at localhost on port 6001
+✔  Channels are ready.
+✔  Listening for http events...
+✔  Listening for redis events...
+Server ready!
+//
+// 检测下<socket.io客户端>url地址是否可访问
+http://project-laravel55-m-broadcaster.test:6001/socket.io/socket.io.js
+--
+3、配置客户端
+(1)、安装 Laravel-Echo 客户端
+$ npm install --save laravel-echo //安装laravel-echo 并记录package.json；
+// $ npm install --save socket.io-client //(应该不用安装 Socket.io 客户端)
+(在运行这个之前你可能需要运行 npm install 来安装 Laravel 及相关依赖)
+//
+(2)、初始化Echo
+官方说法是在resources/assets/js/bootstrap.js文件底部引入是个好地方，打开该文件加入下面内容。打开 resources/assets/js/bootstrap.js 文件， 或者你自己的 引入所有 JS 基础代码的 JS 文件。
+//
+///1/ 添加启动 Echo 基础服务的代码
+import Echo from "laravel-echo";
+window.Echo = new Echo({
+    broadcaster: 'socket.io',
+    host: window.location.hostname + ':6001'
+}); 
+其实如果使用blade模板，没有使用vue等前端，我们需要在入口视图定义id="app"挂载点，否则打包后会发现#app未定义，并且会打包进去vue等我们不需要的内容，文件也会变大，简单粗暴一点可以修改resource/assets/js/app.js，直接打包我们需要的内容。
+import Echo from "laravel-echo";
+window.Echo = new Echo({
+    broadcaster: 'socket.io',
+    host: window.location.hostname + ':6001'
+});
+//
+///2/ 编译脚本
+// 编译压缩到public/app.js文件(如果npm没安装，执行npm install安装)
+$ npm run dev
+//
+///3/ 在视图引入各项
+// resources/views/welcome.blade.php
+/// a、引入csrf
+// Laravel Echo 会需要访问当前会话的 CSRF 令牌，可以在应用程序的 head HTML 元素中定义一个 meta 标签。
+<meta name="csrf-token" content="{{ csrf_token() }}">
+//
+/// b、引入Socket.IO JavaScript 客户端库(通过访问LaravelEchoServer暴露的Socket.IO客户端脚本)
+<script src="//{{ Request::getHost() }}:6001/socket.io/socket.io.js"></script>
+//
+/// c、实例化Echo
+<script src="/js/app.js"></script>
+<script>
+    <!--上面app.js已经进行了Echo的实例化，然后应该使用实例化的Echo进行广播事件的监听-->
+    console.log(Echo);
+</script>
+//
+// 报错：如果控制台报错“Echo没有定义”，则采用新建脚本文件然后编译方式解决。
+// 问题：有时无法从resources/assets/js/bootstrap.js或者resources/assets/js/app.js中的laravel-echo编译进public/js/app.js文件。
+// 解决：在webpack.mix.js文件中添加"mix.js('resources/assets/js/laravelecho.js', 'public/js');"，执行"npm run dev"重新编译脚本，
+//这样resources/assets/js/laravelecho.js文件会被编译到public/js/laravelecho.js，当然resources/assets/js/laravelecho.js文件内容
+//为laravel-echo实例化脚本，如下。
+import Echo from "laravel-echo";
+window.Echo = new Echo({
+    broadcaster: 'socket.io',
+    host: window.location.hostname + ':6001'
+});
+//
+// 报错："[Vue warn]: Cannot find element: #app"。
+// 问题：没有定义vue脚手架元素。
+// 添加：<div id="app"></div>。
+//
+到此为止，我们基本的配置已经完成，Echo的前端监听等后面讲到再补充。
+--
+4、配置和运行队列侦听器
+//// 修改.env 中的配置
+QUEUE_DRIVER=redis
+//
+//// 运行队列监听
+// 默认处理default默认队列
+php artisan queue:work
+// 处理event-broadcast-queue队列
+php artisan queue:work --queue=event-broadcast-queue
+// 
+--
+5、定义事件
+通过 JS 代码告诉程序我们订阅了名为 ’channels-broadcast' 的频道，并监听 ‘EventBroadcast’ 事件(这是事件的类名，可以根据你的需要自定义)。
+//
+///1/ 创建事件
+$ php artisan make:event EventBroadcast
+//
+这将会在 App/Events 目录下面创建一个叫做 EventBroadcast.php 的事件类
+对这个事件类稍作调整使得它能够在我们的 Socket 服务 中能够正常运行，首先确保事件类继承于 ShouldBroadcast 接口，就像下面这样( class EventBroadcast implements ShouldBroadcast )。
+// 接下来向下滚动找到  broadcastOn  函数，修改它使得我们能够在正确的频道上进行广播。
+public function broadcastOn()
+{
+    return new Channel('channels-broadcast');
+}
+//
+// 让我们在下面新建一个函数，这样我们才能有一些实例数据。
+public function broadcastWith()
+{
+    return [
+        'data' => 'key'
+    ];
+}
+这个函数在事件被调用时调用，它将会把数据返回到你的 Socket 服务中。
+--
+6、广播事件(分发事件)
+(1)、广播事件
+现在让我们开始尝试它吧！打开你的 routes/web.php 文件并且新增一个测试路由。
+Route::get('broadcast-event', function(){
+    broadcast(new \App\Events\EventBroadcast());
+});
+( 有很多种方式来广播 EventBroadcast 类，在这个示例中我使用 Laravel 提供的 broadcast() 助手函数，在我看来这是最简洁的方式 )
+//
+(2)、前端监听
+应该还记得前面已经实例化了Echo，现在就是要用这个Echo进行监听，实现广播功能。
+<script src="//{{ Request::getHost() }}:6001/socket.io/socket.io.js"></script>
+<script src="/js/app.js"></script>
+<script>
+    <!--上面app.js已经进行了Echo的实例化，然后应该使用实例化的Echo进行广播事件的监听-->
+    console.log(Echo);
+
+    //// 订阅channels-broadcasts频道，监听EventBroadcast事件。
+    Echo.channel('channels-broadcasts')
+        .listen('EventBroadcast', (e) => {
+        // 如果有广播过来的事件你可以进行逻辑操作；
+        console.log(e);
+
+        // 获取自定义事件数据
+        eventdata = JSON.stringify(e.eventdata);
+        $('#app').append("<div>"+eventdata+"</div>");
+    });
+</script>
+//
+浏览器打开一个包含 JS 文件的页面（可以是 Laravel 默认的欢迎页面resources/views/welcome.blade.php），这是第一个页面，请不要关闭此页面，我们已经在此页面上订阅了 Socket 服务。接下来打开另一个页面访问( http://project-laravel55-m-broadcaster.test/broadcast-event )，这将会返回一个空白页面，但是它将会通过你的 EventBroadcast 类广播到你的 Socket 服务上。返回到我们的第一个页面，打开浏览器控制台，应该可以看到类似信息。
+//
+正如你所看到的，数据通过这种形式展示在我们的客户端。你能输入任意数据通过你的 EventBroadcast 类来广播他们，这些数据可以是新闻更新、页面更新、总浏览量或者更多。
+因为我们有在 laravel-echo-server 配置中有设置开发者模式，所以你能看到 Socket 服务上的所有基本信息。
+//
+///1/ laravel-echo-server服务监听
+$ laravel-echo-server start
+//
+L A R A V E L  E C H O  S E R V E R
+version 1.5.8
+⚠ Starting server in DEV mode...
+✔  Running at localhost on port 6001
+✔  Channels are ready.
+✔  Listening for http events...
+✔  Listening for redis events...
+//
+Server ready!
+//
+[16:12:13] - ESDZxXNzoCjgdqUYAAAO joined channel: channels-broadcasts
+Channel: channels-broadcasts
+Event: App\Events\EventBroadcast
+[16:56:13] - uq-g41gxVK4PqConAAAa left channel: channels-broadcasts (transport close)
+[16:56:13] - 2Pbs5cMX5_68C4FyAAAb joined channel: channels-broadcasts
+Channel: channels-broadcasts
+Event: App\Events\EventBroadcast
+//
+///2/ 队列运行处理器监听
+$ php artisan queue:work
+[2019-09-16 08:56:35] Processing: App\Events\EventBroadcast
+[2019-09-16 08:56:35] Processed:  App\Events\EventBroadcast
+//
+现在你已经安装并运行了一个基本的 Socket 服务！但这并不是全部，你可以根据这个来做更多的事情，比如为单个用户提供认证的私有渠道（当您想广播订单更新或私人消息时）。
+要做到这一点，我建议你去查看 Laravel 文档了解更多相关的内容。通过这个主题你能做很多事情，让你的应用程序变得更加神奇。你可以在这里找到相应的文档Broadcasting - Laravel - The PHP framework for web artisans.laravel.com( https://learnku.com/docs/laravel/5.6/broadcasting/1386 )。
+--
+7、其他：在生产环境中运行
+正如我之前所说，你必须在 laravel-echo-server.json 配置文件中禁用开发者模式。 当然在服务器上你可以忽略这个文件，重新初始化它，因为你的主机可能和本地不同。
+你还需要保持你的 Socket 服务在你的生产环境中运行，你可以用 Supervisor ，但是我通常使用 PM2，它可以方便快速的管理你的服务。(http://pm2.keymetrics.io/)
+//
+//// 这里是我使用 PM2 的 Socket.sh 基本配置
+//#!/usr/bin/env bash
+laravel-echo-server start
+安装了 PM2 后， 你可以通过 pm2 start socket.sh 命令来启动脚本，运行你的 Socket 服务。我希望它能够帮助到你。 这篇文章主要介绍的是一些基础知识，接下来我们会继续讨论广播路由的授权和不同的广播频道。
+--
+--
+原文地址 https://medium.com/@dennissmink/laravel-echo-server-how-to-24d5778ece8b
+译文地址 https://learnku.com/laravel/t/13101/using-laravel-echo-server-to-build-real-time-applications
+--
+8、整体结构
+后端: laravel-echo-server服务器（通过url地址暴露socket.io.js客户端）=> 编写并触发广播事件；
+前端: laravel-echo库 + 后端暴露socket.io.js客户端 => 实例化Echo => 监听广播事件；
+--
+9、supervisor守护进程
+//
+(1)、laravel-echo-server服务启动
+(p-l55-m-broadcaster:laravel-echo-server-start.ini)
+// 进入目录
+$ cd /usr/local/etc/supervisor.d
+// 启动脚本
+$ mkdir shell.d
+$ vim laravel-echo-server-start.sh
+//#!/bin/bash
+cd /Users/cenyebao/web/project-laravel55-m-broadcaster
+sudo laravel-echo-server start
+//
+// 启动程序
+$ vim p-l55-m-broadcaster:laravel-echo-server-start.ini
+[program:laravel-echo-server-start]
+process_name=%(program_name)s_%(process_num)02d
+command=sudo sh /usr/local/etc/supervisor.d/shell.d/laravel-echo-server-start.sh
+autostart=true
+autorestart=true
+user=root
+numprocs=1
+redirect_stderr=true
+stdout_logfile=/Users/cenyebao/web/project-laravel55-m-broadcaster/storage/logs/laravel-echo-server-start.log
+//
+(2)、广播事件队列处理器
+(p-l55-m-broadcaster:event-broadcast-queue.ini)
+$ cd /usr/local/etc/supervisor.d
+$ vim p-l55-m-broadcaster:event-broadcast-queue.ini
+[program:event-broadcast-queue]
+process_name=%(program_name)s_%(process_num)02d
+command=php /Users/cenyebao/web/project-laravel55-m-broadcaster/artisan queue:work --queue=event-broadcast-queue --sleep=3 --tries=3
+autostart=true
+autorestart=true
+user=root
+numprocs=2
+redirect_stderr=true
+stdout_logfile=/Users/cenyebao/web/project-laravel55-m-broadcaster/storage/logs/queueworker.log
+//
+(3)、启动supervisor服务
+// 方法1：手动启动（刚开始学的时候，推荐方法），并指定主配置文件启动；
+sudo supervisord -c /usr/local/etc/supervisord.ini
+//
+// 方法2：自动随系统启动（部署生产环境，推荐方法）；
+sudo brew services start supervisor
+//
+(4)、启动supervisorctl客户端
+sudo supervisorctl -c /usr/local/etc/supervisord.ini
+--
+--
+//// 文摘整理
+参考 https://learnku.com/laravel/t/13101/using-laravel-echo-server-to-build-real-time-applications (使用 Laravel-echo-server 构建实时应用
+)；
+参考 https://www.cnblogs.com/redirect/p/8658800.html (Laravel5.5_事件广播系统实例(Laravel-echo + redis + socket.io))；
+--
+--
+--

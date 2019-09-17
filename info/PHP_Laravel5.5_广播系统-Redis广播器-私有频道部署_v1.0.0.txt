@@ -1,0 +1,375 @@
+^2_3^2workroom3工作室
+--
+说明：请先阅读“PHP_Laravel5.5_广播系统-Redis广播器+LaravelEchoServer(作为Socket.IO服务器|WebSocket服务器)+LaravelEcho客户端_v1.0.0.txt”文件，进行项目部署以及公共频道实现。
+--
+--
+>搭建web授权模块<
+--
+1、创建数据库
+CREATE DATABASE `p-l55-m-broadcaster` DEFAULT CHARACTER SET utf8 COLLATE utf8_general_ci;
+--
+2、数据库设置
+// config/database.php
+'default' => env('DB_CONNECTION', 'mysql'),
+'mysql' => [
+    'driver' => 'mysql',
+    'host' => env('DB_HOST', '127.0.0.1'),
+    'port' => env('DB_PORT', '3306'),
+    'database' => env('DB_DATABASE', 'p-l55-m-broadcaster'),
+    'username' => env('DB_USERNAME', 'root'),
+    'password' => env('DB_PASSWORD', 'root'),
+    'unix_socket' => env('DB_SOCKET', ''),
+    'charset' => 'utf8mb4',
+    'collation' => 'utf8mb4_unicode_ci',
+    'prefix' => '',
+    'strict' => true,
+    'engine' => null,
+],
+--
+3、web授权模块
+( https://learnku.com/docs/laravel/5.5/authentication/1308#authentication-quickstart )
+php artisan make:auth
+php artisan migrate 
+//
+报错：“SQLSTATE[42000]: Syntax error or access violation: 1071 Specified key was too long; max key length is 767 bytes (SQL: alter table `users` add unique `users_email_unique`(`email`))”。
+原因：laravel改变了默认的数据库字符集，现在使用utf8mb4，如果你使用的MySQL数据库高于5.7就不会报错，如果低于该版本就会报错。
+解决方案：在AppServiceProvider添加代码：“Schema::defaultStringLength(191);”。
+--
+4、私有频道订阅
+(1)、创建广播事件
+$ php artisan make:event EventBroadcastPrivate
+<?php
+namespace App\Events;
+use App\User;
+use Illuminate\Broadcasting\Channel;
+use Illuminate\Queue\SerializesModels;
+use Illuminate\Broadcasting\PrivateChannel;
+use Illuminate\Broadcasting\PresenceChannel;
+use Illuminate\Foundation\Events\Dispatchable;
+use Illuminate\Broadcasting\InteractsWithSockets;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+/**
+ * 事件广播系统_私有频道
+ * Class EventBroadcastPrivate
+ * @package App\Events
+ * @author ^2_3^王尔贝
+ */
+class EventBroadcastPrivate implements ShouldBroadcast
+{
+    use Dispatchable, InteractsWithSockets, SerializesModels;
+
+    /**
+     * 用户模型，用以确定归属哪个私有频道
+     * @var
+     * @author ^2_3^王尔贝
+     */
+    private $user;
+
+    /**
+     * 指定事件被放置在哪个队列上
+     * 使用 php artisan queue:work --queue=event-broadcast-queue 监听处理事件广播队列；
+     * 使用 php artisan queue:work 监听处理的是default默认队列；
+     *
+     * @var string
+     */
+    public $broadcastQueue = 'event-broadcast-queue';
+
+    /**
+     * 广播事件事件
+     * @return array
+     * @author ^2_3^王尔贝
+     */
+    public function broadcastWith()
+    {
+        return [
+            'eventdata' => [
+                'eventname' => 'EventBroadcastPrivate',
+                'channelchannel' => 'channels-private-user-{id}',
+                'devname' => 'cyb43',
+            ]
+        ];
+    }
+
+    /**
+     * Create a new event instance.
+     *
+     * @return void
+     */
+    public function __construct(User $user)
+    {
+        $this->user = $user;
+    }
+
+    /**
+     * Get the channels the event should broadcast on.
+     *
+     * @return \Illuminate\Broadcasting\Channel|array
+     */
+    public function broadcastOn()
+    {
+        return new PrivateChannel('channels-private-user-'.$this->user->id);
+
+        //// 提示：需要定义授权频道路由供框架自动请求授权；
+        //// 频道授权
+        // channel 方法接收两个参数：频道名称和一个回调函数，该回调通过返回 true 或 false 来表示用户是否被授权监听该频道。
+        // 框架发起请求自动验证，无需手动请求。所有的授权回调接收当前被认证的用户作为第一个参数，任何额外的通配符参数作为后续参数。
+        //Broadcast::channel('App.User.{id}', function ($user, $id) {
+        //    return (int) $user->id === (int) $id;
+        //});
+//        Broadcast::channel('channels-private-user-{id}', function ($user, $id) {
+//            return (int) $user->id === (int) $id;
+//        });
+    }
+}
+?>
+//
+(2)、私有频道授权路由定义
+// routes/channels.php
+//// 频道授权
+// channel 方法接收两个参数：频道名称和一个回调函数，该回调通过返回 true 或 false 来表示用户是否被授权监听该频道。
+// 框架发起请求自动验证，无需手动请求。所有的授权回调接收当前被认证的用户作为第一个参数，任何额外的通配符参数作为后续参数。
+Broadcast::channel('channels-private-user-{id}', function ($user, $id) {
+    return (int) $user->id === (int) $id;
+});
+//
+(3)、前端监听
+// 前端路由(routes/web.php)
+Route::get('/', function () {
+    $user = \Illuminate\Support\Facades\Auth::user();
+    if( $user ) {
+        $user = collect($user)->toArray();
+    }
+    return view('welcome', ['user'=>$user]);
+});
+//
+// 前端视图(resources/views/welcome.blade.php)
+<!doctype html>
+<html lang="{{ app()->getLocale() }}">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+
+        <!--
+        Laravel5.5_事件广播系统-Redis广播器(结合Redis队列)+LaravelEchoServer(作为Socket.IO服务器/WebSocket服务器)+LaravelEcho客户端；
+        -->
+        <title>
+            Laravel5.5.28_事件广播系统-Redis广播器(结合Redis队列)+LaravelEchoServer(作为Socket.IO服务器/WebSocket服务器)+LaravelEcho客户端
+        </title>
+        <!-- 1、引入csrf -->
+        <meta name="csrf-token" content="{{ csrf_token() }}">
+        <!-- 2、引入Socket.IO JavaScript 客户端库(通过访问LaravelEchoServer暴露的Socket.IO客户端脚本) -->
+        <script src="//{{ Request::getHost() }}:6001/socket.io/socket.io.js"></script>
+        <!-- 3、实例化Echo -->
+        <script src="/js/app.js"></script>
+        <script>
+            <!--上面app.js已经进行了Echo的实例化，然后应该使用实例化的Echo进行广播事件的监听-->
+            console.log(Echo);
+
+            //// 订阅channels-broadcasts频道，监听EventBroadcast事件。
+            Echo.channel('channels-broadcasts')
+                .listen('EventBroadcast', (e) => {
+                // 如果有广播过来的事件你可以进行逻辑操作；
+                console.log(e);
+
+                // 获取自定义事件数据
+                eventdata = JSON.stringify(e.eventdata);
+                $('#app').append("<div>"+eventdata+"</div>");
+            });
+
+            @if ($user)
+                //// 订阅私有频道
+                Echo.private("channels-private-user-{{$user['id']}}")
+                    .listen('EventBroadcastPrivate', (e) => {
+                    console.log(e);
+                });
+                console.log("监听私有频道(channels-private-user-{{$user['id']}})");
+            @else
+                console.log('没有登录，不能监听私有频道');
+            @endif
+
+        </script>
+
+        <!-- jQuery库 -->
+        <script src="https://cdn.jsdelivr.net/npm/jquery@1.12.4/dist/jquery.min.js"></script>
+
+        <!-- Fonts -->
+        <link href="https://fonts.googleapis.com/css?family=Raleway:100,600" rel="stylesheet" type="text/css">
+
+        <!-- Styles -->
+        <style>
+            html, body {
+                background-color: #fff;
+                color: #636b6f;
+                font-family: 'Raleway', sans-serif;
+                font-weight: 100;
+                height: 100vh;
+                margin: 0;
+            }
+
+            .full-height {
+                height: 100vh;
+            }
+
+            .flex-center {
+                align-items: center;
+                display: flex;
+                justify-content: center;
+            }
+
+            .position-ref {
+                position: relative;
+            }
+
+            .top-right {
+                position: absolute;
+                right: 10px;
+                top: 18px;
+            }
+
+            .content {
+                text-align: center;
+            }
+
+            .title {
+                font-size: 84px;
+            }
+
+            .links > a {
+                color: #636b6f;
+                padding: 0 25px;
+                font-size: 12px;
+                font-weight: 600;
+                letter-spacing: .1rem;
+                text-decoration: none;
+                text-transform: uppercase;
+            }
+
+            .m-b-md {
+                margin-bottom: 30px;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="flex-center position-ref full-height">
+            @if (Route::has('login'))
+                <div class="top-right links">
+                    @auth
+                        <a href="{{ url('/home') }}">Home</a>
+                    @else
+                        <a href="{{ route('login') }}">Login</a>
+                        <a href="{{ route('register') }}">Register</a>
+                    @endauth
+                </div>
+            @endif
+
+            <div class="content">
+                <div class="title m-b-md">
+                    Laravel5.5.28
+                </div>
+
+                <div class="links">
+                    <a href="https://laravel.com/docs">Documentation</a>
+                    <a href="https://laracasts.com">Laracasts</a>
+                    <a href="https://laravel-news.com">News</a>
+                    <a href="https://forge.laravel.com">Forge</a>
+                    <a href="https://github.com/laravel/laravel">GitHub</a>
+                </div>
+
+                <div style="text-align: left; padding: 0 25px;">
+                    <div>^2_3^</div>
+                    <div id="d-eventbroadcast">
+                        <a href="javascript:void(0);">广播"EventBroadcast"事件</a>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+
+        <div id="app">
+            <div>广播系统事件监听_输出</div>
+        </div>
+
+        <script type="application/javascript">
+            $(document).ready(function(){
+                // 广播"EventBroadcast"事件
+                $("#d-eventbroadcast").click(function() {
+                    $.get( "http://project-laravel55-m-broadcaster.test/broadcast-event", function( data ) {
+                        console.log( data );
+                    });
+                });
+            });
+        </script>
+    </body>
+</html>
+//
+(4)、广播事件
+///1/ 广播事件(私有频道) routes/web.php
+Route::get('/event-broadcast-private', function () {
+    $user = \Illuminate\Support\Facades\Auth::user();
+    event( new \App\Events\EventBroadcastPrivate($user));
+
+    return "已经广播EventBroadcastPrivate事件(user[{$user->id}])；";
+});
+//
+///2/ 访问广播事件
+http://project-laravel55-m-broadcaster.test/event-broadcast-private
+//
+(5)、监控器监控情况
+///1/ laravel-echo-server
+[15:19:10] - Preparing authentication request to: http://project-laravel55-m-broadcaster.test/
+[15:19:10] - Sending auth request to: http://project-laravel55-m-broadcaster.test//broadcasting/auth
+[15:19:10] - 56eifWUp9MumKAZ5AAAI authenticated for: private-channels-private-user-1
+[15:19:10] - 56eifWUp9MumKAZ5AAAI joined channel: private-channels-private-user-1
+Channel: private-channels-private-user-1
+Event: App\Events\EventBroadcastPrivate
+//
+///2/ 事件队列监控情况
+[2019-09-17 07:29:08] Processing: App\Events\EventBroadcastPrivate
+[2019-09-17 07:29:08] Processed:  App\Events\EventBroadcastPrivate
+--
+5、supervisor守护进程启动
+///1/ 启动supervisor服务
+// 方法1：手动启动（刚开始学的时候，推荐方法），并指定主配置文件启动；
+sudo supervisord -c /usr/local/etc/supervisord.ini
+//
+// 方法2：自动随系统启动（部署生产环境，推荐方法）；
+sudo brew services start supervisor
+//
+///2/ 启动supervisorctl客户端
+sudo supervisorctl -c /usr/local/etc/supervisord.ini
+//
+///3/ laravel-echo-server 监听
+$ cd /Users/cenyebao/web/project-laravel55-m-broadcaster/storage/logs
+$ tail -f laravel-echo-server-start.log
+//
+⚠ Starting server in DEV mode...
+✔  Running at localhost on port 6001
+✔  Channels are ready.
+✔  Listening for http events...
+✔  Listening for redis events...
+Server ready!
+//
+$
+[16:17:44] - cirmTLVKFbdWOLwCAAAA joined channel: channels-broadcasts
+[16:17:44] - Preparing authentication request to: http://project-laravel55-m-broadcaster.test/
+[16:17:44] - Sending auth request to: http://project-laravel55-m-broadcaster.test//broadcasting/auth
+[16:17:44] - cirmTLVKFbdWOLwCAAAA authenticated for: private-channels-private-user-1
+[16:17:44] - cirmTLVKFbdWOLwCAAAA joined channel: private-channels-private-user-1
+Channel: channels-broadcasts
+Event: App\Events\EventBroadcast
+Channel: private-channels-private-user-1
+Event: App\Events\EventBroadcastPrivate
+//
+//
+///4/ 事件队列运行监听
+$ cd /Users/cenyebao/web/project-laravel55-m-broadcaster/storage/logs
+$ tail -f queueworker.log
+[2019-09-17 08:18:32] Processing: App\Events\EventBroadcast
+[2019-09-17 08:18:32] Processed:  App\Events\EventBroadcast
+[2019-09-17 08:18:35] Processing: App\Events\EventBroadcastPrivate
+[2019-09-17 08:18:35] Processed:  App\Events\EventBroadcastPrivate
+--
+--
+--
