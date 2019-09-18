@@ -1,5 +1,16 @@
 [Git]_如何用命令将本地项目上传到github？
 --
+>中文文档<
+https://gitee.com/progit/
+https://www.kancloud.cn/kancloud/progit
+--
+0、git用户配置
+$ git config --list
+$ git config --global user.name=王尔贝
+$ git config --global user.email=cyb_43@foxmail.com
+$ git config user.name
+$ git config user.email
+--
 1、进入项目目录
 $ cd /Users/cenyebao/web/project-laravel55-m-broadcaster
 --
