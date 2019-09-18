@@ -37,6 +37,13 @@ git status
 --
 github官网 https://github.com/
 --
+0、git用户配置
+$ git config --list
+$ git config --global user.name=王尔贝
+$ git config --global user.email=cyb_43@foxmail.com
+$ git config user.name
+$ git config user.email
+--
 ///1/ 删除远程仓库
 git remote rm origin-project-laravel55-platform4api
 //
